@@ -14,11 +14,11 @@ public class DFSFicheroCliente {
 	private DFSCliente dfs;
 	private String nom;
 	private String modo;
+	private FicheroInfo info;
 	private long pos;
 	private Cache cache;
 	private int tamBloq;
 	private int tamCache;
-	private long fecha;
 	private boolean open;
 	private boolean activada;
 	private boolean dentro = false;
@@ -35,17 +35,17 @@ public class DFSFicheroCliente {
 		this.callback = new DFSFicheroCallbackImpl(this);
 		
 		//System.out.println("hago peticion de abrir fichero");
-		FicheroInfo aux = dfs.getDfs_serv().iniciar(nom, modo, tamBloq, callback);
+		info = dfs.getDfs_serv().iniciar(nom, modo, tamBloq, callback);
 		//System.out.println("recibo respuesta de peticion de abrir");
 		cache = dfs.getCache(nom);
-		if (aux.getFecha() > cache.obtenerFecha()) {
+		//System.out.println("fecha actual: "+info.getFecha()+" fecha cache: "+cache.obtenerFecha());
+		if (info.getFecha() > cache.obtenerFecha()) {
 			//System.out.println("voy a vaciar");
 			cache.vaciar();
 		}
-		this.fecha = aux.getFecha();
-		fich = aux.getDfs_fich();
+		fich = info.getDfs_fich();
 		open = true;
-		activada = aux.getUsarCache();
+		activada = info.getUsarCache();
 	}
 
 	public int read(byte[] b) throws RemoteException, IOException {
@@ -55,31 +55,42 @@ public class DFSFicheroCliente {
 		}
 
 		int nBloq = b.length / tamBloq;
+		int cachePosicion = (int)pos/tamBloq;
 		Bloque b_serv;
 		Bloque bloq;
 		Bloque dirty;
 		if (activada) {
 			for (int i = 0, offset = 0; i < nBloq; i++, pos += tamBloq, offset += tamBloq) {
-				bloq = cache.getBloque(pos);
+				bloq = cache.getBloque(cachePosicion+i);
 				if (bloq == null) {
 					b_serv = fich.DFSread(pos);
-
-					bloq = new Bloque(b_serv.obtenerId(), b_serv.obtenerContenido());
+					if(i==0 && b_serv==null) {
+						return -1;
+					}else if(b_serv==null){
+						break;
+					}
+					bloq = new Bloque(cachePosicion+i, b_serv.obtenerContenido());
 
 					dirty = cache.putBloque(bloq);
 					if (dirty != null && cache.preguntarMod(dirty)) {
-						fich.DFSwrite(dirty);
+						fich.DFSwrite(dirty, pos);
 						cache.desactivarMod(dirty);
 					}
+					//pos += tamBloq;
 				}
 
 				System.arraycopy(bloq.obtenerContenido(), 0, b, offset, tamBloq);
 			}
 		} else {
-			for (int i = 0, offset = 0; i < nBloq; i++, pos += tamBloq, offset += tamBloq) {
+			for (int i = 0, offset = 0; i < nBloq; i++, pos+=tamBloq, offset += tamBloq) {
 				b_serv = fich.DFSread(pos);
-				bloq = new Bloque(b_serv.obtenerId(), b_serv.obtenerContenido());
-				System.arraycopy(bloq.obtenerContenido(), 0, b, offset, tamBloq);
+				if(i==0 && b_serv==null) {
+					return -1;
+				}else if(b_serv==null){
+					break;
+				}
+				System.arraycopy(b_serv.obtenerContenido(), 0, b, offset, tamBloq);
+				//pos += tamBloq;
 			}
 		}
 
@@ -97,26 +108,27 @@ public class DFSFicheroCliente {
 			throw new IOException();
 		}
 		int nBloq = b.length / tamBloq;
-		byte[] baux = new byte[tamBloq];
+		int cachePosicion = (int)pos/tamBloq;
 		Bloque bloq;
 		Bloque dirty;
 		if (activada) {
 			for (int i = 0, offset = 0; i < nBloq; i++, pos += tamBloq, offset = tamBloq) {
+				byte[] baux = new byte[tamBloq];
 				System.arraycopy(b, offset, baux, 0, tamBloq);
-				bloq = new Bloque(pos, baux);
+				bloq = new Bloque(cachePosicion+i, baux);
 				cache.activarMod(bloq);
 				dirty = cache.putBloque(bloq);
 				if (dirty != null && cache.preguntarMod(dirty)) {
-					fich.DFSwrite(dirty);
+					fich.DFSwrite(dirty, dirty.obtenerId()*tamBloq);
 					cache.desactivarMod(dirty);
 				}
-				fecha++;
 			}
 		} else {
 			for (int i = 0, offset = 0; i < nBloq; i++, pos += tamBloq, offset = tamBloq) {
+				byte[] baux = new byte[tamBloq];
 				System.arraycopy(b, offset, baux, 0, tamBloq);
 				bloq = new Bloque(pos, baux);
-				fich.DFSwrite(bloq);
+				fich.DFSwrite(bloq, pos);
 			}
 		}
 	}
@@ -145,14 +157,14 @@ public class DFSFicheroCliente {
 
 			while (i.hasNext()) {
 				aux = i.next();
-				fich.DFSwrite(aux);
+				fich.DFSwrite(aux, aux.obtenerId()*tamBloq);
 				cache.desactivarMod(aux);
 			}
-			cache.fijarFecha(fecha);
+			cache.fijarFecha(info.getFecha());
 		}
 		open = false;
 		//System.out.println("voy a enviar peticion de close a servidor");
-		fich.DFSclose();
+		fich.DFSclose(modo);
 		//System.out.println("acabo de recibir el resultado del close");
 	}
 
@@ -176,7 +188,7 @@ public class DFSFicheroCliente {
 
 			while (i.hasNext()) {
 				aux = i.next();
-				fich.DFSwrite(aux);
+				fich.DFSwrite(aux, aux.obtenerId()*tamBloq);
 				cache.desactivarMod(aux);
 			}
 		}

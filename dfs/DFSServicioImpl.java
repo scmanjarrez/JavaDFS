@@ -2,6 +2,7 @@
 
 package dfs;
 
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.rmi.RemoteException;
 import java.rmi.server.UnicastRemoteObject;
@@ -18,8 +19,8 @@ public class DFSServicioImpl extends UnicastRemoteObject implements DFSServicio 
 	}
 
 	public synchronized FicheroInfo iniciar(String nom, String mode, int tamBloq, DFSFicheroCallback callback)
-			throws IOException {
-		//System.out.println("recibo 1 iniciar, dentro="+dentro);
+			throws RemoteException, FileNotFoundException, IOException {
+		System.out.println("recibo 1 iniciar, dentro="+dentro);
 		while (dentro) {
 			try {
 				//System.out.println("antes del open, dentro="+dentro);
@@ -35,12 +36,18 @@ public class DFSServicioImpl extends UnicastRemoteObject implements DFSServicio 
 		dentro = true;
 		Iterator<DFSFicheroServ> i = servicio.iterator();
 		DFSFicheroServImpl aux;
-		boolean usarCache;
+		boolean usarCache=false;
 		while (i.hasNext()) {
 			aux = (DFSFicheroServImpl) i.next();
 			if (aux.getNom().equals(nom)) {
 				//System.out.println("antes del open");
-				usarCache = aux.DFSopen(mode, callback);
+				try {
+					usarCache = aux.DFSopen(mode, callback);
+				} catch (IOException e) {
+					dentro = false;
+					notifyAll();
+					throw new IOException();
+				}
 				//System.out.println("despues del open");
 				dentro = false;
 				notifyAll();
@@ -48,13 +55,31 @@ public class DFSServicioImpl extends UnicastRemoteObject implements DFSServicio 
 			}
 		}
 
-		DFSFicheroServImpl newFile = new DFSFicheroServImpl(nom, tamBloq);
+		DFSFicheroServImpl newFile = new DFSFicheroServImpl(nom, tamBloq, this);
 		servicio.add(newFile);
-		usarCache = newFile.DFSopen(mode, callback);
+		try {
+			usarCache = newFile.DFSopen(mode, callback);
+		} catch (IOException e) {
+			dentro = false;
+			notifyAll();
+			throw new IOException();
+		}
 		dentro = false;
 		notifyAll();
 		//System.out.println("envio 1 iniciar");
 		return new FicheroInfo(newFile.getFecha(), newFile, usarCache);
+	}
+
+	public synchronized void eliminarFichero(String nom) throws RemoteException{
+		Iterator<DFSFicheroServ> i = servicio.iterator();
+		DFSFicheroServImpl aux;
+		while (i.hasNext()) {
+			aux = (DFSFicheroServImpl) i.next();
+			if (aux.getNom().equals(nom)) {
+				i.remove();
+				//return;
+			}
+		}
 	}
 
 }

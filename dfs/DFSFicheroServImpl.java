@@ -13,7 +13,6 @@ import java.util.Iterator;
 
 public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicheroServ {
 	private static final String DFSDir = "DFSDir/";
-	private long fecha;
 	private RandomAccessFile file;
 	private String nom;
 	private String mode;
@@ -21,15 +20,16 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 	private int nEscritores = 0;
 	private int tamBloq;
 	private boolean dentro;
-	private boolean existe;
+	//private boolean existe;
 	private ArrayList<DFSFicheroCallback> usandoCache;
+	private DFSServicio servicio;
 
-	public DFSFicheroServImpl(String nom, int tamBloq) throws RemoteException, FileNotFoundException {
+	public DFSFicheroServImpl(String nom, int tamBloq, DFSServicio servicio) throws RemoteException, FileNotFoundException {
 		this.nom = nom;
-		this.fecha = 0;
 		this.tamBloq = tamBloq;
 		this.dentro = false;
-		this.existe = true;
+		//this.existe = true;
+		this.servicio = servicio;
 		this.usandoCache = new ArrayList<DFSFicheroCallback>();
 	}
 
@@ -43,27 +43,34 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			}
 		}
 		dentro = true;
-
+		boolean puede = puedeUsarCache(mode, callback);
+		System.out.println("paso?");
 		if (nLectores == 0 && nEscritores == 0) {
-			File f = new File(nom);
+			File f = new File(DFSDir + nom);
 			if ((!f.exists() || f.isDirectory()) && mode.equals("r")) {
-				existe = false;
+				// System.out.println("entro al existe=false");
+				//existe = false;
+				dentro = false;
+				System.out.println("libero el cerrojo? dentro="+dentro);
+				notifyAll();
+				throw new IOException();
 			}
-			//System.out.println("voy a abrir en modo " + mode);
+			// System.out.println("voy a abrir en modo " + mode);
 			file = new RandomAccessFile(DFSDir + nom, "rw");
 			this.mode = mode;
 		}
+		System.out.println("deberia estar aqui");
 		if (mode.equals("r")) {
 			nLectores++;
 		}
 		if (mode.equals("rw")) {
 			nEscritores++;
-			existe = true;
+			//existe = true;
 		}
 
 		dentro = false;
 		notifyAll();
-		return puedeUsarCache(mode, callback);
+		return puede;
 	}
 
 	public synchronized Bloque DFSread(long pos) throws IOException {
@@ -76,22 +83,30 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			}
 		}
 		dentro = true;
-		//System.out.println("estoy en read");
-		if (!existe) {
-			throw new IOException();
-		}
+		// System.out.println("estoy en read");
+		// System.out.println("existe="+existe);
+		//if (!existe) {
+		//	dentro = false;
+		//	notifyAll();
+		//	throw new IOException();
+		//}
 
 		byte[] b = new byte[tamBloq];
 		file.seek(pos);
-		file.read(b);
+		int leido = file.read(b);
+		if (leido == -1) {
+			dentro = false;
+			notifyAll();
+			return null;
+		}
 		Bloque bloq = new Bloque(pos, b);
 		dentro = false;
-		//System.out.println("??");
+		// System.out.println("??");
 		notifyAll();
 		return bloq;
 	}
 
-	public synchronized void DFSwrite(Bloque bloq) throws IOException {
+	public synchronized void DFSwrite(Bloque bloq, long pos) throws IOException {
 		while (dentro) {
 			try {
 				wait();
@@ -101,17 +116,16 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			}
 		}
 		dentro = true;
-		//System.out.println("estoy en write");
+		// System.out.println("estoy en write");
 
-		file.seek(bloq.obtenerId());
+		file.seek(pos);
 		byte[] b = bloq.obtenerContenido();
 		file.write(b);
-		fecha++;
 		dentro = false;
 		notifyAll();
 	}
 
-	public synchronized void DFSclose() throws IOException {
+	public synchronized void DFSclose(String mmode) throws IOException {
 		while (dentro) {
 			try {
 				wait();
@@ -121,19 +135,22 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			}
 		}
 		dentro = true;
-		//System.out.println("estoy en close");
+		// System.out.println("estoy en close");
 
-		if (mode.equals("r")) {
+		//System.out.println("nEsc= " + nEscritores + " nLect= " + nLectores);
+		if (mmode.equals("r")) {
 			nLectores--;
 		}
-		if (mode.equals("rw")) {
+		if (mmode.equals("rw")) {
 			nEscritores--;
 		}
 
-		//System.out.println("lectores= " + nLectores + " escritores= " + nEscritores);
+		// System.out.println("lectores= " + nLectores + " escritores= " +
+		// nEscritores);
 		if (nLectores == 0 && nEscritores == 0) {
-			//System.out.println("voy a cerrar de verdad");
+			// System.out.println("voy a cerrar de verdad");
 			file.close();
+			servicio.eliminarFichero(nom);
 		}
 		dentro = false;
 		notifyAll();
@@ -151,36 +168,29 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 		return tamBloq;
 	}
 
-	public long getFecha() {
-		return fecha;
+	public synchronized long getFecha() {
+		File f = new File(DFSDir + nom);
+		return f.lastModified();
 	}
 
 	private boolean puedeUsarCache(String mode, DFSFicheroCallback callback) throws IOException {
-		if (nEscritores == 0 && mode.equals("r")) {
-			usandoCache.add(callback);
-			//System.out.println("puede usar cache");
-			return true;
-		}
-		if (nLectores != 0 && mode.equals("rw")) {
-			//System.out.println("no puede usar cache, desalojando...");
-			Iterator<DFSFicheroCallback> i = usandoCache.iterator();
-			while (i.hasNext()) {
-				i.next().invalidarCache();
-			}
-			usandoCache.clear();
-			return false;
-		}
-		if (nEscritores == 1 && mode.equals("r")) {
-			//System.out.println("no puede usar cache, desalojando...");
-			usandoCache.get(0).invalidarCache();
-			usandoCache.remove(0);
-			if (!usandoCache.isEmpty()) {
-				//System.out.println("error, deberia estar vacia la lista de callbacks, ya que solo 'habia' 1 escritor");
+		
+		//si hay lectores o escritores y llega escritor, se desactiva
+		// o si hay escritores y llega lector, se desactiva
+		if((nEscritores > 0 || nLectores > 0)&&mode.equals("rw")||(nEscritores>0 && mode.equals("r"))){
+			System.out.println("se va a desactivar cache, nLec="+nLectores+" nEsc="+nEscritores+" modo="+mode);
+			if(!usandoCache.isEmpty()){
+				Iterator<DFSFicheroCallback> i = usandoCache.iterator();
+				while (i.hasNext()) {
+					i.next().invalidarCache();
+				}
+				usandoCache.clear();
 			}
 			return false;
 		}
-
-		return false;
+		System.out.println("se permite cache, nLec="+nLectores+" nEsc="+nEscritores+" modo="+mode);
+		usandoCache.add(callback);
+		return true;
 	}
 
 }

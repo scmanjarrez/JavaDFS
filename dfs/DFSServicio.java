@@ -11,5 +11,7 @@ public interface DFSServicio extends Remote {
 
 	FicheroInfo iniciar(String nom, String mode, int tamBloq, DFSFicheroCallback callback)
 			throws RemoteException, FileNotFoundException, IOException;
-
+	
+	void eliminarFichero(String nom) throws RemoteException;
+	
 }
