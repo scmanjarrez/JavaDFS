@@ -19,22 +19,23 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 	private int nLectores = 0;
 	private int nEscritores = 0;
 	private int tamBloq;
-	private boolean dentro;
+	/*private boolean dentro;*/
 	//private boolean existe;
 	private ArrayList<DFSFicheroCallback> usandoCache;
 	private DFSServicio servicio;
+	private File infoFile;
 
 	public DFSFicheroServImpl(String nom, int tamBloq, DFSServicio servicio) throws RemoteException, FileNotFoundException {
 		this.nom = nom;
 		this.tamBloq = tamBloq;
-		this.dentro = false;
+		/*this.dentro = false;*/
 		//this.existe = true;
 		this.servicio = servicio;
 		this.usandoCache = new ArrayList<DFSFicheroCallback>();
 	}
 
 	public synchronized boolean DFSopen(String mode, DFSFicheroCallback callback) throws IOException {
-		while (dentro) {
+		/*while (dentro) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
@@ -42,17 +43,17 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 				e.printStackTrace();
 			}
 		}
-		dentro = true;
+		dentro = true;*/
 		boolean puede = puedeUsarCache(mode, callback);
 		System.out.println("paso?");
 		if (nLectores == 0 && nEscritores == 0) {
-			File f = new File(DFSDir + nom);
-			if ((!f.exists() || f.isDirectory()) && mode.equals("r")) {
+			infoFile = new File(DFSDir + nom);
+			if ((!infoFile.exists() || infoFile.isDirectory()) && mode.equals("r")) {
 				// System.out.println("entro al existe=false");
 				//existe = false;
-				dentro = false;
-				System.out.println("libero el cerrojo? dentro="+dentro);
-				notifyAll();
+				/*dentro = false;
+				/*System.out.println("libero el cerrojo? dentro="+dentro);
+				notifyAll();*/
 				throw new IOException();
 			}
 			// System.out.println("voy a abrir en modo " + mode);
@@ -68,13 +69,13 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			//existe = true;
 		}
 
-		dentro = false;
-		notifyAll();
+		/*dentro = false;
+		notifyAll();*/
 		return puede;
 	}
 
 	public synchronized Bloque DFSread(long pos) throws IOException {
-		while (dentro) {
+		/*while (dentro) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
@@ -82,7 +83,7 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 				e.printStackTrace();
 			}
 		}
-		dentro = true;
+		dentro = true;*/
 		// System.out.println("estoy en read");
 		// System.out.println("existe="+existe);
 		//if (!existe) {
@@ -95,19 +96,19 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 		file.seek(pos);
 		int leido = file.read(b);
 		if (leido == -1) {
-			dentro = false;
-			notifyAll();
+			/*dentro = false;
+			notifyAll();*/
 			return null;
 		}
 		Bloque bloq = new Bloque(pos, b);
-		dentro = false;
+		/*dentro = false;
 		// System.out.println("??");
-		notifyAll();
+		notifyAll();*/
 		return bloq;
 	}
 
 	public synchronized void DFSwrite(Bloque bloq, long pos) throws IOException {
-		while (dentro) {
+		/*while (dentro) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
@@ -115,18 +116,18 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 				e.printStackTrace();
 			}
 		}
-		dentro = true;
+		dentro = true;*/
 		// System.out.println("estoy en write");
 
 		file.seek(pos);
 		byte[] b = bloq.obtenerContenido();
 		file.write(b);
-		dentro = false;
-		notifyAll();
+		/*dentro = false;
+		notifyAll();*/
 	}
 
-	public synchronized void DFSclose(String mmode) throws IOException {
-		while (dentro) {
+	public synchronized long DFSclose(String mmode) throws IOException {
+		/*while (dentro) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
@@ -134,7 +135,7 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 				e.printStackTrace();
 			}
 		}
-		dentro = true;
+		dentro = true;*/
 		// System.out.println("estoy en close");
 
 		//System.out.println("nEsc= " + nEscritores + " nLect= " + nLectores);
@@ -152,8 +153,9 @@ public class DFSFicheroServImpl extends UnicastRemoteObject implements DFSFicher
 			file.close();
 			servicio.eliminarFichero(nom);
 		}
-		dentro = false;
-		notifyAll();
+		/*dentro = false;
+		notifyAll();*/
+		return infoFile.lastModified();
 	}
 
 	public String getNom() {

@@ -16,5 +16,5 @@ public interface DFSFicheroServ extends Remote {
 
 	public void DFSwrite(Bloque bloq, long pos) throws IOException;
 
-	public void DFSclose(String mmode) throws IOException;
+	public long DFSclose(String mmode) throws IOException;
 }

@@ -21,7 +21,7 @@ public class DFSFicheroCliente {
 	private int tamCache;
 	private boolean open;
 	private boolean activada;
-	private boolean dentro = false;
+	/*private boolean dentro = false;*/
 	private DFSFicheroCallback callback;
 
 	public DFSFicheroCliente(DFSCliente dfs, String nom, String modo)
@@ -73,7 +73,7 @@ public class DFSFicheroCliente {
 
 					dirty = cache.putBloque(bloq);
 					if (dirty != null && cache.preguntarMod(dirty)) {
-						fich.DFSwrite(dirty, pos);
+						fich.DFSwrite(dirty, dirty.obtenerId()*tamBloq);
 						cache.desactivarMod(dirty);
 					}
 					//pos += tamBloq;
@@ -97,7 +97,7 @@ public class DFSFicheroCliente {
 		return b.length;
 	}
 
-	public void write(byte[] b) throws RemoteException, IOException {
+	public synchronized void write(byte[] b) throws RemoteException, IOException {
 		//System.out.println("entro en cliente write?");
 
 		if (!open) {
@@ -133,7 +133,7 @@ public class DFSFicheroCliente {
 		}
 	}
 
-	public void seek(long p) throws RemoteException, IOException {
+	public synchronized void seek(long p) throws RemoteException, IOException {
 		//System.out.println("entro en cliente seek?");
 
 		if (!open) {
@@ -143,7 +143,7 @@ public class DFSFicheroCliente {
 		pos = p;
 	}
 
-	public void close() throws RemoteException, IOException {
+	public synchronized void close() throws RemoteException, IOException {
 		//System.out.println("entro en cliente close?");
 
 		if (!open) {
@@ -160,7 +160,7 @@ public class DFSFicheroCliente {
 				fich.DFSwrite(aux, aux.obtenerId()*tamBloq);
 				cache.desactivarMod(aux);
 			}
-			cache.fijarFecha(info.getFecha());
+			cache.fijarFecha(fich.DFSclose(modo));
 		}
 		open = false;
 		//System.out.println("voy a enviar peticion de close a servidor");
@@ -170,7 +170,7 @@ public class DFSFicheroCliente {
 
 	public synchronized void invalidacionCache() throws IOException {
 		//System.out.println("me van a desalojar, pero que cojones???!!");
-		while (dentro) {
+		/*while (dentro) {
 			try {
 				wait();
 			} catch (InterruptedException e) {
@@ -178,7 +178,7 @@ public class DFSFicheroCliente {
 				e.printStackTrace();
 			}
 		}
-		dentro = true;
+		dentro = true;*/
 		//System.out.println("ahora si me desalojan t_t, stop deshaucios!!!");
 		activada = false;
 		if (modo.equals("rw")) {
@@ -193,8 +193,8 @@ public class DFSFicheroCliente {
 			}
 		}
 		cache.vaciar();
-		dentro = false;
-		notifyAll();
+		/*dentro = false;
+		notifyAll();*/
 	}
 
 }
